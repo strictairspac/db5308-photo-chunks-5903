@@ -1,11 +1,11 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import text
 
 from src.config.settings import cache, engine
 from src.controllers.workflow import download
 from src.models.tables import audit, cases, evidence, runs
-from src.schemas.workflow import CaseForm, LoginForm, ReviewForm
-from src.services import domain, workflow
+from src.schemas.workflow import BackfillForm, CaseForm, LoginForm, ReviewForm
+from src.services import block_index, domain, workflow
 from src.services.security import current_user, login, operator, reviewer
 
 router = APIRouter()
@@ -52,6 +52,23 @@ def start_run(case_id: int, actor=Depends(operator)):
 @router.get('/evidence')
 def list_evidence(_=Depends(current_user)):
     return workflow.recent(evidence)
+
+
+@router.get('/blocks/occurrences')
+def lookup_block_occurrences(address: str, limit: int = Query(block_index.DEFAULT_PAGE),
+                             cursor: str | None = None, _=Depends(current_user)):
+    return block_index.lookup(address, limit=limit, cursor=cursor)
+
+
+@router.get('/blocks/index')
+def block_index_status(_=Depends(current_user)):
+    return block_index.status()
+
+
+@router.post('/blocks/index/backfill')
+def backfill_block_index(form: BackfillForm | None = None, _=Depends(operator)):
+    form = form or BackfillForm()
+    return block_index.backfill_step(batch=form.batch, max_evidence=form.max_evidence)
 
 
 @router.get('/evidence/{identity}/download')

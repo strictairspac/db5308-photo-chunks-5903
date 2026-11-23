@@ -1,4 +1,5 @@
 import hashlib
+import logging
 import uuid
 
 from fastapi import HTTPException
@@ -7,7 +8,7 @@ from sqlalchemy import and_, or_, select
 from src.config.settings import cache, engine
 from src.constants.workflow import Status
 from src.models.tables import audit, cases, evidence, runs
-from src.services import domain
+from src.services import block_index, domain
 from src.utils.encoding import canonical
 from src.utils.time import utc_time
 
@@ -86,7 +87,21 @@ def finish(run_id, token, result=None, error=None):
         if not count:
             return
         if result is not None:
-            conn.execute(evidence.insert().values(run_id=run_id, report=result, digest=digest))
+            # 先锁出具锁行再插入证据：保证证据编号顺序与提交顺序一致，反查翻页边界
+            # 取到的「已提交最大编号」以内不会再有新报告迟到。
+            block_index.touch_lease(conn)
+            evidence_id = conn.execute(evidence.insert().values(run_id=run_id, report=result,
+                                    digest=digest)).inserted_primary_key[0]
+            # 与证据同事务写入块引用索引：新报告出具后立即可反查，不必等待历史补录。
+            payload = conn.execute(select(cases.c.payload)
+                                   .select_from(runs.join(cases, runs.c.case_id == cases.c.id))
+                                   .where(runs.c.id == run_id)).scalar_one_or_none()
+            try:
+                if payload is not None:
+                    block_index.index_evidence(conn, evidence_id, run_id, payload)
+            except (ValueError, KeyError, TypeError):
+                # 索引失败时保留证据；该报告会因缺少收录标记而在补录时重做。
+                logging.exception('Block reference index failed for evidence %s', evidence_id)
         log(conn, 'worker', status.value, run_id)
 
 

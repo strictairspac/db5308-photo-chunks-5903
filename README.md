@@ -35,6 +35,26 @@ docker compose up -d --build --wait
 
 `SEED_DEMO=true` 启动时生成账号与一个业务样例。工作台新建档案会预填样例。可编辑表单中的数值、文本和结构化 JSON 后提交。业务说明中的原始文件是上游示例，演示数据通过表单录入。角色枚举位于后端 `src/constants/workflow.py` 与前端 `src/constants/workflow.js`。执行状态枚举也位于这两个文件，使用于队列、列表和执行详情。证据校验码是报告 JSON 按 UTF-8、键排序且省略多余空格序列化后的 SHA-256。
 
+## 块摘要反查
+
+复核发现坏块时，可按块摘要反查它出现在哪些验收报告、哪份底片版本和第几块。同一块在同一报告内出现多次时逐处返回。
+
+```sh
+curl -s 'http://127.0.0.1:19297/blocks/occurrences?address=<64位SHA-256>&limit=50' \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+- `results[]` 每项含 `report_id`（报告编号，即证据编号）、`run_id`、`snapshot_id`（底片版本）、`asset`（底片文件）、`chunk_index`（从 1 开始的块序号）与 `ordinal`（报告内引用序号）。
+- `total`、`report_count` 为本次翻页范围内的总处数与报告数；翻页时把 `next_cursor` 原样回传，`has_more` 为 `false` 即到末尾。
+- 首批结果打开时固定当时已出具报告的边界（`boundary_evidence_id`），后续页只在该边界内翻动，不会漏项，也不会混入后来出具的报告。游标与块摘要、边界绑定并做签名校验。
+- 翻页只读块引用索引表，不逐份扫描报告正文。
+
+新报告在证据落库的同一事务内写入索引，出具后即可反查；历史证据由可中断的补录收录：
+
+- 启动时后台自动补录一次；也可手动执行 `docker compose exec -T backend python -m scripts.backfill_index`，或用 `--max 200` 分批限时。
+- 补录按证据逐份推进，每份收录后提交并记录标记；中断后重跑只处理未收录的报告，重复收录由唯一约束跳过，不会多出记录。
+- `GET /blocks/index` 查看补录进度（`pending_evidence`、`done`），`POST /blocks/index/backfill`（经办员）触发一批补录。
+
 ## 工程结构
 
 | 服务 | 实现 |

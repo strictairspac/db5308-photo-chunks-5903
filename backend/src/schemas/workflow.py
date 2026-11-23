@@ -15,3 +15,8 @@ class CaseForm(BaseModel):
 
 class ReviewForm(BaseModel):
     note: str = Field(min_length=1, max_length=500)
+
+
+class BackfillForm(BaseModel):
+    batch: int = Field(default=100, ge=1, le=1000)
+    max_evidence: int | None = Field(default=None, ge=1, le=100000)

@@ -145,6 +145,27 @@ def validate(payload):
     _prepare(payload)
 
 
+def block_references(payload):
+    """展开每份快照的逐处块引用（快照、底片文件、从 1 开始的块序号、块地址）。
+
+    仅复用入库规则校验内容与切块，不做还原、故障与留存计算，供反查索引使用。
+    """
+    _, manifests, _, _, _ = _prepare(payload)
+    rows = []
+    ordinal = 0
+    for manifest in manifests.values():
+        for chunk_index, address in enumerate(manifest.addresses, start=1):
+            ordinal += 1
+            rows.append({
+                'address': address,
+                'snapshot': manifest.snapshot_id,
+                'asset': manifest.asset,
+                'chunk_index': chunk_index,
+                'ordinal': ordinal,
+            })
+    return rows
+
+
 def _restore_row(stage, manifest, restored):
     if restored.issues:
         verdict = '块查验失败'

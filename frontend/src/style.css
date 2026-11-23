@@ -1,4 +1,5 @@
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html { min-height: 100%; }
 body { margin: 0; background: var(--paper); color: var(--ink); font: 15px/1.6 var(--body-font), 'PingFang SC', sans-serif; }
 h1,h2,.identity { font-family: var(--title-font), 'Songti SC', serif; line-height: 1.22; }
